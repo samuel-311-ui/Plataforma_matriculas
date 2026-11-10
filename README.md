@@ -103,52 +103,61 @@ PostgreSQL está configurado con max_connections=20, por lo que réplicas × (DB
 
 Métricas: cada petición escribe en los logs de la API una línea con el formato METRICA,método,ruta,status,duración_ms (visible con docker logs matricula_api). Estos datos se usan para calibrar el modelo de simulación. Además, cada respuesta incluye el header X-Process-Time-ms.
 
-<!--
+## Ejecución del proyecto
 
 Antes de ejecutar el proyecto se necesita tener instalado:
 
-Docker Desktop
-Git
-Visual Studio Code
-1. Clonar el repositorio
+- Docker Desktop
+- Git
+- Visual Studio Code
+
+### 1. Clonar el repositorio
+
+```bash
 git clone https://github.com/samuel-311-ui/Plataforma_matriculas
-
-Entrar a la carpeta:
-
 cd Plataforma_matriculas
-2. Crear el archivo de variables de entorno
+```
 
+### 2. Variables de entorno
 
-Ejemplo:
+No es necesario crear un archivo `.env`: las variables de la base de datos ya están definidas en `docker-compose.yml`:
 
+```
 POSTGRES_USER=matricula_user
 POSTGRES_PASSWORD=matricula_password
 POSTGRES_DB=matricula_db
 POSTGRES_HOST=db
 POSTGRES_PORT=5432
-3. Construir y ejecutar los servicios
+```
+
+### 3. Construir y ejecutar los servicios
+
+```bash
 docker compose up --build
+```
 
 Docker iniciará los siguientes servicios:
 
-db
-api
-streamlit
-4. Acceder a la aplicación
+- `db`
+- `api`
+- `streamlit`
 
-Streamlit:
+### 4. Acceder a la aplicación
 
-http://localhost:8501
+| Servicio | URL |
+|----------|-----|
+| Streamlit | http://localhost:8501 |
+| FastAPI | http://localhost:8000 |
+| Documentación de la API | http://localhost:8000/docs |
 
-FastAPI:
+### Detener los servicios
 
-http://localhost:8000
-
-Documentación de la API:
-
-http://localhost:8000/docs
-Detener los servicios
-
-Para detener los contenedores:
-
+```bash
 docker compose down
+```
+
+Para borrar también los datos guardados en la base de datos:
+
+```bash
+docker compose down -v
+```
