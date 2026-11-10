@@ -77,11 +77,31 @@ La API proporciona los siguientes endpoints principales:
 
 Método	Endpoint	Descripción
 GET	/	Verificar que la API está funcionando
+GET	/health	Verificar la API y la conexión con la base de datos
 POST	/estudiantes	Registrar un estudiante
 GET	/estudiantes	Consultar estudiantes
 POST	/asignaturas	Registrar una asignatura
 GET	/asignaturas	Consultar asignaturas
 POST	/matriculas	Registrar una matrícula
+GET	/matriculas	Consultar todas las matrículas (filtros opcionales: estudiante_id, asignatura_id)
+DELETE	/matriculas?matricula_id=ID	Cancelar una matrícula y liberar su cupo
+
+Reglas de la matrícula (POST /matriculas):
+
+- Responde 404 si el estudiante o la asignatura no existen.
+- Responde 409 si no hay cupos disponibles o si el estudiante ya está matriculado en la asignatura.
+- El descuento de cupo es atómico, por lo que solicitudes simultáneas no pueden sobrepasar el cupo.
+
+Configuración del pool de conexiones (variables de entorno de la API):
+
+Variable	Valor por defecto	Descripción
+DB_POOL_SIZE	5	Conexiones permanentes del pool por réplica de la API
+DB_MAX_OVERFLOW	0	Conexiones extra permitidas por encima del pool
+DB_POOL_TIMEOUT	30	Segundos de espera por una conexión libre
+
+PostgreSQL está configurado con max_connections=20, por lo que réplicas × (DB_POOL_SIZE + DB_MAX_OVERFLOW) debe mantenerse en unas 17 conexiones o menos.
+
+Métricas: cada petición escribe en los logs de la API una línea con el formato METRICA,método,ruta,status,duración_ms (visible con docker logs matricula_api). Estos datos se usan para calibrar el modelo de simulación. Además, cada respuesta incluye el header X-Process-Time-ms.
 
 <!--
 
