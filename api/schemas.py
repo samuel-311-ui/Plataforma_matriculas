@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from pydantic import EmailStr
+from pydantic import Field
 
 
 class EstudianteCreate(BaseModel):
@@ -22,7 +23,7 @@ class AsignaturaCreate(BaseModel):
 
     codigo: str
     nombre: str
-    cupos: int
+    cupos: int = Field(gt=0)
 
 
 class AsignaturaResponse(BaseModel):
