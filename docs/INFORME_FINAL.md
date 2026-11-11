@@ -16,8 +16,7 @@ simon.restrepo405@pascualbravo.edu.co | Infraestructura / API / Telemetría |
 felipe.hurtado796@pascualbravo.edu.co | Análisis Estadístico / Contraste M/M/c |
 `analisis/`, `docs/` |
 ## 1. Resumen Ejecutivo
-[Máximo 1 párrafo: problema abordado, políticas comparadas en el simulador
-y decisión final de ingeniería respaldada por el KPI principal.]
+[Una plataforma de matrícula académica recibe picos de solicitudes simultáneas (consultas, matrículas y cancelaciones) que compiten por las conexiones a PostgreSQL y por los cupos de las asignaturas, lo que genera colas, tiempos de espera y rechazos. Se construyó un prototipo real contenerizado (Streamlit + FastAPI + PostgreSQL en Docker) que registra telemetría por petición, y con ella se calibró un modelo de simulación de eventos discretos en SimPy.]
 ## 2. Contexto del Sistema y Subsanación de la Entrega 1
 ### 2.1 Dinámica del Sistema (Qué fluye, qué espera, qué se satura)
 - **Entidades que fluyen:** solicitudes HTTP de estudiantes, que llegan desde Streamlit (o directamente a la API en las pruebas de carga). Tipos según el costo en base de datos:
