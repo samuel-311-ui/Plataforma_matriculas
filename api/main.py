@@ -1,29 +1,18 @@
 import logging
 import time
+import os
+import csv
 from typing import Optional
 
-from fastapi import FastAPI
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Query
-from fastapi import Request
-
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .database import Base
-from .database import engine
-from .database import get_db
+from .database import Base, engine, get_db
+from . import models, schemas
 
-from . import models
-from . import schemas
-
-
-Base.metadata.create_all(
-    bind=engine
-)
-
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Plataforma de Matrícula",
@@ -31,23 +20,27 @@ app = FastAPI(
     version="1.1"
 )
 
+# --- CONFIGURACIÓN DE TELEMETRÍA PERSISTENTE EN CSV ---
+LOG_DIR = "/app/datos" if os.path.exists("/app") else "datos"
+LOG_FILE = os.path.join(LOG_DIR, "telemetry_log.csv")
 
-# Métricas: una línea por petición en stdout (visible con `docker logs`).
-# Formato: METRICA,<método>,<ruta>,<status>,<duración_ms>
-# Estos datos sirven para estimar tiempos de servicio y tasas de llegada
-# al calibrar el modelo de simulación (SimPy).
+os.makedirs(LOG_DIR, exist_ok=True)
+if not os.path.exists(LOG_FILE):
+    with open(LOG_FILE, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestamp", "method", "endpoint", "status_code", "duration_ms"])
+
 logger = logging.getLogger("uvicorn.error")
-
 
 @app.middleware("http")
 async def medir_tiempo(request: Request, call_next):
-
     inicio = time.perf_counter()
     response = await call_next(request)
     duracion_ms = (time.perf_counter() - inicio) * 1000
 
     response.headers["X-Process-Time-ms"] = f"{duracion_ms:.2f}"
 
+    # 1. Registro en logs de Docker
     logger.info(
         "METRICA,%s,%s,%s,%.2f",
         request.method,
@@ -56,7 +49,22 @@ async def medir_tiempo(request: Request, call_next):
         duracion_ms
     )
 
+    # 2. Captura de telemetría persistente en CSV para SimPy
+    try:
+        with open(LOG_FILE, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                time.time(),
+                request.method,
+                request.url.path,
+                response.status_code,
+                round(duracion_ms, 2)
+            ])
+    except Exception as e:
+        logger.error(f"Error escribiendo telemetria: {e}")
+
     return response
+
 
 
 # Endpoint 1 - estado de la API

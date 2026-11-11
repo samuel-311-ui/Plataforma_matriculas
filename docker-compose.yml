@@ -1,26 +1,19 @@
 services:
-
   db:
     image: postgres:16
-
     container_name: matricula_db
-
     environment:
       POSTGRES_USER: matricula_user
       POSTGRES_PASSWORD: matricula_password
       POSTGRES_DB: matricula_db
-
     ports:
       - "5432:5432"
-
     command:
       - postgres
       - -c
-      - max_connections=20
-
+      - max_connections=100   # <--- Alineado a 100 para subsanar la Entrega 1
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
     healthcheck:
       test:
         [
@@ -31,42 +24,34 @@ services:
       timeout: 5s
       retries: 5
 
-
   api:
     build:
       context: .
       dockerfile: dockerfile.api
-
     container_name: matricula_api
-
     environment:
       POSTGRES_USER: matricula_user
       POSTGRES_PASSWORD: matricula_password
       POSTGRES_DB: matricula_db
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-
     ports:
       - "8000:8000"
-
+    volumes:
+      - ./datos:/app/datos   # <--- Compartición de volumen para guardar telemetry_log.csv
     depends_on:
       db:
         condition: service_healthy
-
 
   streamlit:
     build:
       context: .
       dockerfile: dockerfile.streamlit
-
     container_name: matricula_streamlit
-
     ports:
       - "8501:8501"
-
     depends_on:
       - api
-
 
 volumes:
   postgres_data:

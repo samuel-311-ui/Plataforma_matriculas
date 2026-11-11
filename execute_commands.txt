@@ -1,0 +1,130 @@
+
+ GUÍA DE COMANDOS DE EJECUCIÓN - SISTEMA DE MATRÍCULAS (ENTREGA FINAL)
+
+===============================================================================
+
+
+
+1. DESPLIEGUE DEL SISTEMA REAL CON DOCKER
+
+-------------------------------------------------------------------------------
+
+# Detiene y remueve contenedores o volúmenes previos para garantizar un entorno limpio
+
+docker compose down
+
+
+
+# Construye e inicia en segundo plano los servicios de la base de datos (PostgreSQL), 
+
+# la API REST (FastAPI) y la interfaz gráfica (Streamlit)
+
+docker compose up --build -d
+
+
+
+# Verifica que los contenedores estén activos y en estado de salud correcto (healthy)
+
+docker compose ps
+
+
+
+
+
+2. PRUEBA DE TELEMETRÍA Y CAPTURA DE DATOS
+
+-------------------------------------------------------------------------------
+
+# Realiza una petición GET al endpoint de inicio para verificar la conectividad de la API
+
+curl -X GET "http://localhost:8000/"
+
+
+
+# Realiza una petición GET al endpoint de salud para validar conexión con PostgreSQL
+
+curl -X GET "http://localhost:8000/health"
+
+
+
+# (Opcional) Abre en el navegador para interactuar manualmente con los endpoints:
+
+# http://localhost:8000/docs
+
+
+
+# Muestra en pantalla el contenido del archivo de telemetría generado en datos/
+
+cat datos/telemetry_log.csv
+
+
+
+
+
+3. INSTALACIÓN DE DEPENDENCIAS PARA SIMULACIÓN Y ANÁLISIS
+
+-------------------------------------------------------------------------------
+
+# Instala las librerías necesarias para el modelo de colas estocástico y visualizaciones
+
+pip install simpy pandas numpy matplotlib
+
+
+
+
+
+4. EJECUCIÓN DEL MOTOR ESTOCÁSTICO EN SIMPY
+
+-------------------------------------------------------------------------------
+
+# Cambia a la carpeta del motor de simulación
+
+cd simulacion
+
+
+
+# Corre las 30 réplicas estocásticas para la Política Actual (Pool=10) y Alternativa (Pool=15).
+
+# Genera automáticamente los archivos resultados_base.csv y resultados_alt.csv en simulacion/resultados/
+
+python main.py
+
+
+
+# Regresa a la raíz del proyecto
+
+cd ..
+
+
+
+
+
+5. CONTRASTE TEÓRICO (M/M/c), LEY DE LITTLE Y GENERACIÓN DE GRÁFICAS
+
+-------------------------------------------------------------------------------
+
+# Cambia a la carpeta de análisis
+
+cd analisis
+
+
+
+# Imprime en consola la tabla de contraste entre el modelo analítico M/M/c y la simulación SimPy,
+
+# e incluye la verificación matemática explícita de la Ley de Little (L = λ * W)
+
+python contrast_analysis.py
+
+
+
+# Genera las figuras estadísticas en la carpeta docs/figuras/ (grafica_p95_sla.png y grafica_abandonos.png)
+
+python generate_charts.py
+
+
+
+# Regresa a la raíz del proyecto
+
+cd ..
+
+===============================================================================
