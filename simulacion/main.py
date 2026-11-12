@@ -1,96 +1,106 @@
-import simpy
-import random
-import numpy as np
-import pandas as pd
+"""Corre TODOS los experimentos del informe. Un solo comando:
+
+    python simulacion/main.py            (o:  cd simulacion && python main.py)
+
+Cada experimento usa N = 30 réplicas independientes (semillas 42..71). Escribe un CSV por
+experimento en simulacion/resultados/ (una fila por réplica). Después, analisis/ calcula
+medias, IC95 %, contraste M/M/c y figuras a partir de esos CSV.
+Opciones:  --rapido (5 réplicas, para probar)   --solo nombre1,nombre2
+"""
+import argparse
+import itertools
 import os
-from config import (
-    SIM_TIME, POOL_SIZE_BASE, POOL_SIZE_ALT, MAX_CONNECTIONS, 
-    VAL_TIME_MEAN, VAL_TIME_STD, NUM_REPLICAS, LAMBDA_PICO
-)
+import sys
+import time
+from multiprocessing import Pool
 
-class PlataformaMatricula:
-    def __init__(self, env, pool_size, max_queue):
-        self.env = env
-        self.servidores = simpy.Resource(env, capacity=pool_size)
-        self.max_queue = max_queue
-        self.cola_actual = 0
-        self.abandonos = 0
-        self.atendidos = 0
-        self.tiempos_espera = []
-        self.tiempos_sistema = []
+import pandas as pd
 
-def estudiante_process(env, id_est, plataforma):
-    llegada = env.now
-    
-    # Límite duro, rechazo si la cola excede MAX_CONNECTIONS
-    if plataforma.cola_actual >= plataforma.max_queue:
-        plataforma.abandonos += 1
-        return
-        
-    plataforma.cola_actual += 1
-    with plataforma.servidores.request() as req:
-        # Regla C7: Abandono por timeout si espera más de 5 segundos
-        results = yield req | env.timeout(5.0)
-        
-        plataforma.cola_actual -= 1
-        if req in results:
-            inicio_servicio = env.now
-            espera = inicio_servicio - llegada
-            plataforma.tiempos_espera.append(espera)
-            
-            # Tiempo de servicio lognormal calibrado
-            tiempo_servicio = random.lognormvariate(np.log(VAL_TIME_MEAN), VAL_TIME_STD)
-            yield env.timeout(tiempo_servicio)
-            
-            tiempo_total = env.now - llegada
-            plataforma.tiempos_sistema.append(tiempo_total)
-            plataforma.atendidos += 1
-        else:
-            plataforma.abandonos += 1
+import config as C
+import modelo
 
-def generador_llegadas(env, plataforma, tasa_llegada):
-    id_est = 0
-    while True:
-        t_entre_llegadas = random.expovariate(tasa_llegada)
-        yield env.timeout(t_entre_llegadas)
-        id_est += 1
-        env.process(estudiante_process(env, id_est, plataforma))
+P = None
 
-def ejecutar_simulacion(seed, pool_size):
-    random.seed(seed)
-    np.random.seed(seed)
-    env = simpy.Environment()
-    plataforma = PlataformaMatricula(env, pool_size=pool_size, max_queue=MAX_CONNECTIONS)
-    
-    env.process(generador_llegadas(env, plataforma, tasa_llegada=LAMBDA_PICO))
-    env.run(until=SIM_TIME * 60)
-    
-    total_solicitudes = plataforma.atendidos + plataforma.abandonos
-    tasa_abandono = (plataforma.abandonos / total_solicitudes * 100) if total_solicitudes > 0 else 0
-    espera_media = np.mean(plataforma.tiempos_espera) if plataforma.tiempos_espera else 0
-    sistema_medio = np.mean(plataforma.tiempos_sistema) if plataforma.tiempos_sistema else 0
-    p95_latencia = np.percentile(plataforma.tiempos_sistema, 95) if plataforma.tiempos_sistema else 0
-    
-    return {
-        "atendidos": plataforma.atendidos,
-        "abandonos": plataforma.abandonos,
-        "tasa_abandono": tasa_abandono,
-        "espera_media_Wq": espera_media,
-        "sistema_medio_W": sistema_medio,
-        "p95_latencia": p95_latencia
-    }
+
+def _init():
+    global P
+    P = modelo.cargar_parametros()
+
+
+def _params(mundo):
+    return P if mundo == "medido" else modelo.parametros_e1(P)
+
+
+def _tarea(t):
+    """t = (experimento, claves, semilla). Devuelve una fila de resultados."""
+    exp, cfg, semilla = t
+    cfg = dict(cfg)
+    mundo = cfg.pop("mundo")
+    kind = cfg.pop("kind")
+    if kind == "estudiantes":
+        n, perfil = cfg.pop("N"), cfg.pop("perfil", "pico60")
+        s = modelo.Sistema(_params(mundo), semilla=semilla, **cfg)
+        m = s.correr_estudiantes(n, perfil=perfil)
+    elif kind == "mmc":
+        mu_media = cfg.pop("media_servicio")
+        p = modelo.parametros_e1(P, mu_media, mu_media)
+        s = modelo.Sistema(p, semilla=semilla, **cfg)
+        m = s.correr_abierto(32, 3600, timeout=1e9, calentamiento=300, hasta=3600)
+    else:  # abierto
+        rps, seg = cfg.pop("rps"), cfg.pop("seg")
+        timeout = cfg.pop("timeout", C.T_CLIENTE)
+        s = modelo.Sistema(_params(mundo), semilla=semilla, **cfg)
+        m = s.correr_abierto(rps, seg, timeout=timeout, calentamiento=seg * 0.2, hasta=seg * 1.5)
+    return {"experimento": exp, "mundo": mundo, "semilla": semilla,
+            **{k: v for k, v in t[1].items() if k not in ("mundo", "kind")}, **m}
+
+
+def definir():
+    E = {}
+    # 1. Línea base de la Entrega 1 con tiempos MEDIDOS y con los SUPUESTOS de la E1
+    E["e1_base"] = [dict(mundo=m, kind="estudiantes", N=C.N_BASE, replicas=1, pool=10)
+                    for m in ("medido", "e1")]
+    # 2. Contraste M/M/10 (lambda=32, mu=4) contra Erlang C
+    E["mmc_e1"] = [dict(mundo="e1", kind="mmc", media_servicio=0.25, replicas=1, pool=10)]
+    # 3. Sensibilidad a la demanda (supuestos E1): ¿dónde se rompe la política actual?
+    E["sens_N_e1"] = [dict(mundo="e1", kind="estudiantes", N=n, replicas=1, pool=10)
+                      for n in (3000, 3750, 4500, 6000, 9000, 12000)]
+    # 4. Malla réplicas x pool bajo estrés (supuestos E1), solo configuraciones factibles (C6)
+    E["malla_e1"] = [dict(mundo="e1", kind="estudiantes", N=6000, replicas=r, pool=p)
+                     for r in (1, 2, 3, 4, 6) for p in (5, 10, 15, 20) if r * p <= C.CONEXIONES_USABLES]
+    # 5. Variante: trabajo huérfano (el servidor termina peticiones que el cliente ya abandonó)
+    E["huerfanas_e1"] = [dict(mundo="e1", kind="estudiantes", N=6000, replicas=1, pool=10, huerfanas=h)
+                         for h in (True, False)]
+    # 6. Sistema medido: sensibilidad a la demanda (el cuello de botella es la CPU de Python)
+    E["sens_N_medido"] = [dict(mundo="medido", kind="estudiantes", N=n, replicas=1, pool=10, perfil="tabla8")
+                          for n in (3000, 30000, 100000, 150000)]
+    # 7. Sistema medido: malla réplicas x pool a tasa constante (lazo abierto, T=10 s, sin reintentos)
+    E["malla_medido"] = [dict(mundo="medido", kind="abierto", rps=rps, seg=60, replicas=r, pool=p)
+                         for rps in (250, 500) for r in (1, 2, 4) for p in (5, 10, 20)
+                         if r * p <= C.CONEXIONES_USABLES]
+    return E
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rapido", action="store_true")
+    ap.add_argument("--solo", default="")
+    a = ap.parse_args()
+    reps = 5 if a.rapido else C.NUM_REPLICAS
+    E = definir()
+    if a.solo:
+        E = {k: v for k, v in E.items() if k in a.solo.split(",")}
+    os.makedirs(C.RESULTADOS, exist_ok=True)
+    if not os.path.exists(C.PARAMETROS):
+        sys.exit("Falta parametros.json: ejecute primero  python calibrar.py  y  python ajustar_kappa.py")
+    with Pool(max(os.cpu_count() or 1, 1), initializer=_init) as pool:
+        for nombre, cfgs in E.items():
+            t0 = time.time()
+            tareas = [(nombre, c, C.SEMILLA_BASE + i) for c in cfgs for i in range(reps)]
+            filas = pool.map(_tarea, tareas, chunksize=1)
+            pd.DataFrame(filas).to_csv(os.path.join(C.RESULTADOS, f"{nombre}.csv"), index=False)
+            print(f"{nombre}: {len(filas)} corridas en {time.time()-t0:.0f} s", flush=True)
+
 
 if __name__ == "__main__":
-    os.makedirs("resultados", exist_ok=True)
-    
-    print(f"Ejecutando {NUM_REPLICAS} réplicas del Escenario Base (Pool = {POOL_SIZE_BASE})...")
-    res_base = [ejecutar_simulacion(seed=42 + i, pool_size=POOL_SIZE_BASE) for i in range(NUM_REPLICAS)]
-    df_base = pd.DataFrame(res_base)
-    df_base.to_csv("resultados/resultados_base.csv", index=False)
-    
-    print(f"Ejecutando {NUM_REPLICAS} réplicas del Escenario Alternativo (Pool = {POOL_SIZE_ALT})...")
-    res_alt = [ejecutar_simulacion(seed=42 + i, pool_size=POOL_SIZE_ALT) for i in range(NUM_REPLICAS)]
-    df_alt = pd.DataFrame(res_alt)
-    df_alt.to_csv("resultados/resultados_alt.csv", index=False)
-    
-    print("Simulación finalizada:  Archivos creados en simulacion/resultados/")
+    main()
