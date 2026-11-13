@@ -20,11 +20,14 @@ DATABASE_URL = (
 
 # Parámetros del pool configurables por variables de entorno
 # (variable de decisión del proyecto: tamaño del pool de conexiones).
-# Ojo: réplicas_api * (DB_POOL_SIZE + DB_MAX_OVERFLOW) debe ser <= ~17,
-# porque PostgreSQL tiene max_connections=20 y reserva algunas.
-DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+# Valores por defecto = escenario base de la Entrega 1: 1 réplica x pool de 10,
+# sin conexiones extra y timeout de espera de 10 s.
+# Límite duro (C6): PostgreSQL tiene max_connections=100 y reserva 3 para
+# superusuario, es decir 97 útiles:
+#     réplicas_api * (DB_POOL_SIZE + DB_MAX_OVERFLOW) <= 97
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "10"))
 DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "0"))
-DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "10"))
 
 
 engine = create_engine(

@@ -58,11 +58,13 @@ Plataforma_matriculas/
 │
 ├── simulacion/
 │
-├── datos/
+├── datos/              (telemetría real, generador de carga, corridas de validación)
 │
-├── analisis/
+├── simulacion/         (modelo SimPy: config, calibrar, ajustar_kappa, modelo, main)
 │
-├── docs/
+├── analisis/           (contraste M/M/c, Ley de Little, figuras, tablas)
+│
+├── docs/               (INFORME_FINAL.md y figuras/)
 │
 ├── Dockerfile.api
 ├── Dockerfile.streamlit
@@ -95,13 +97,13 @@ Reglas de la matrícula (POST /matriculas):
 Configuración del pool de conexiones (variables de entorno de la API):
 
 Variable	Valor por defecto	Descripción
-DB_POOL_SIZE	5	Conexiones permanentes del pool por réplica de la API
+DB_POOL_SIZE	10	Conexiones permanentes del pool por réplica de la API
 DB_MAX_OVERFLOW	0	Conexiones extra permitidas por encima del pool
-DB_POOL_TIMEOUT	30	Segundos de espera por una conexión libre
+DB_POOL_TIMEOUT	10	Segundos de espera por una conexión libre
 
-PostgreSQL está configurado con max_connections=20, por lo que réplicas × (DB_POOL_SIZE + DB_MAX_OVERFLOW) debe mantenerse en unas 17 conexiones o menos.
+PostgreSQL está configurado con max_connections=100 (3 reservadas), por lo que réplicas × (DB_POOL_SIZE + DB_MAX_OVERFLOW) debe mantenerse en 97 conexiones o menos (restricción C6).
 
-Métricas: cada petición escribe en los logs de la API una línea con el formato METRICA,método,ruta,status,duración_ms (visible con docker logs matricula_api). Estos datos se usan para calibrar el modelo de simulación. Además, cada respuesta incluye el header X-Process-Time-ms.
+Telemetría: cada petición se registra en datos/telemetry_log.csv (volumen ./datos) con las columnas timestamp, method, endpoint, status_code, duration_ms, pre_ms (espera hasta obtener conexión del pool) y hold_ms (tiempo que retiene la conexión). Estos datos calibran el modelo de simulación. Además, cada respuesta incluye el header X-Process-Time-ms y la línea METRICA,... en los logs (docker logs matricula_api).
 
 ## Ejecución del proyecto
 
@@ -161,3 +163,39 @@ Para borrar también los datos guardados en la base de datos:
 ```bash
 docker compose down -v
 ```
+
+## Comandos principales
+
+Un comando para levantar la API real (con PostgreSQL y Streamlit):
+
+```bash
+docker compose up --build -d
+```
+
+Un comando para ejecutar la simulación SimPy (30 réplicas, semillas 42..71, todos los escenarios):
+
+```bash
+pip install -r requirements-simulacion.txt
+python simulacion/main.py
+```
+
+Luego, el análisis y las figuras (se guardan en `docs/figuras/`):
+
+```bash
+python analisis/contrast_analysis.py     # contraste M/M/c y Ley de Little
+python analisis/generate_charts.py       # figuras
+python analisis/tablas.py                # tablas con media ± IC95 %
+```
+
+## Recalibrar con el sistema real (opcional)
+
+Los parámetros del modelo están en `simulacion/parametros.json`, calculados con la telemetría de `datos/telemetry_log.csv`. Para volver a medirlos en su propio Docker (API en `http://localhost:8000`):
+
+```bash
+pip install aiohttp pandas
+python datos/generar_carga.py calibrar --n 3000     # 6000 peticiones secuenciales sin congestión
+python simulacion/calibrar.py                       # genera simulacion/parametros.json
+python simulacion/ajustar_kappa.py                  # ajusta y valida contra datos/real/ (requiere esas corridas)
+```
+
+Las corridas de carga usadas para validar (`datos/real/`) se generan con `datos/validacion_real.sh`.

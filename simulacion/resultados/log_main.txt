@@ -1,0 +1,7 @@
+e1_base: 60 corridas en 11 s
+mmc_e1: 30 corridas en 147 s
+sens_N_e1: 180 corridas en 120 s
+malla_e1: 570 corridas en 243 s
+huerfanas_e1: 60 corridas en 33 s
+sens_N_medido: 120 corridas en 1757 s
+malla_medido: 540 corridas en 521 s
