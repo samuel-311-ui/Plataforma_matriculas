@@ -14,7 +14,7 @@
 
 ## 1. Resumen Ejecutivo
 
-Una plataforma de matrícula recibe picos de solicitudes que compiten por los hilos de la API, las conexiones a PostgreSQL y la CPU del proceso Python. Construimos un prototipo contenerizado (Streamlit + FastAPI + PostgreSQL) con telemetría por petición, calibramos con ella un modelo SimPy y lo validamos contra la API real (diferencia de la latencia media ≤ 3 % en cuatro de cinco corridas hasta 200 req/s). Con 30 réplicas por escenario, la política actual (1 réplica, pool 10) cumple el SLA con los 3000 estudiantes de la Entrega 1 (p95 = 0.84 s, abandono 0 %), pero se rompe desde unos 4500: con 6000 estudiantes el abandono llega a 23.9 % y el p95 a 7.3 s. Dos réplicas con pool 10 (20 conexiones, muy por debajo del límite de 97) devuelven el p95 a 0.83 s y el abandono a 0 %. Con los tiempos realmente medidos, el cuello de botella no es el pool sino la CPU de cada réplica. Recomendamos desplegar 2 réplicas con pool 10.
+Una plataforma de matrícula recibe picos de solicitudes que compiten por los hilos de la API, las conexiones a PostgreSQL y la CPU del proceso Python. Construimos un prototipo contenerizado (Streamlit + FastAPI + PostgreSQL) con telemetría por petición, calibramos con ella un modelo SimPy y lo validamos contra la API real (diferencia de la latencia media ≤ 3 % en cuatro de cinco corridas hasta 200 req/s).
 
 ## 2. Contexto del Sistema y Subsanación de la Entrega 1
 
