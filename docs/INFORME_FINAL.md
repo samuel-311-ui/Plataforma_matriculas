@@ -14,7 +14,7 @@
 
 ## 1. Resumen Ejecutivo
 
-Una plataforma de matrícula recibe picos de solicitudes que compiten por los hilos de la API, por las conexiones a PostgreSQL y por la CPU del proceso Python. Construimos un prototipo contenerizado (Streamlit + FastAPI + PostgreSQL) con telemetría por petición, calibramos con ella un modelo SimPy y lo validamos contra la API real (error de la latencia media ≤ 6 % hasta 200 req/s en cuatro de cinco corridas). Con 30 réplicas por escenario encontramos que la política actual (1 réplica, pool 10) cumple el SLA con los 3000 estudiantes de la Entrega 1 (p95 = 0.84 s, abandono 0 %), pero se rompe desde unos 4500: con 6000 estudiantes el abandono llega a 23.9 % y el p95 a 7.3 s. Dos réplicas con pool 10 (20 conexiones, muy por debajo del límite de 97) devuelven el p95 a 0.83 s y el abandono a 0 %. Con los tiempos realmente medidos el cuello de botella no es el pool sino la CPU de cada réplica. Recomendamos desplegar 2 réplicas con pool 10.
+Una plataforma de matrícula recibe picos de solicitudes que compiten por los hilos de la API, las conexiones a PostgreSQL y la CPU del proceso Python. Construimos un prototipo contenerizado (Streamlit + FastAPI + PostgreSQL) con telemetría por petición, calibramos con ella un modelo SimPy y lo validamos contra la API real (diferencia de la latencia media ≤ 3 % en cuatro de cinco corridas hasta 200 req/s). Con 30 réplicas por escenario, la política actual (1 réplica, pool 10) cumple el SLA con los 3000 estudiantes de la Entrega 1 (p95 = 0.84 s, abandono 0 %), pero se rompe desde unos 4500: con 6000 estudiantes el abandono llega a 23.9 % y el p95 a 7.3 s. Dos réplicas con pool 10 (20 conexiones, muy por debajo del límite de 97) devuelven el p95 a 0.83 s y el abandono a 0 %. Con los tiempos realmente medidos, el cuello de botella no es el pool sino la CPU de cada réplica. Recomendamos desplegar 2 réplicas con pool 10.
 
 ## 2. Contexto del Sistema y Subsanación de la Entrega 1
 
@@ -33,7 +33,7 @@ Una plataforma de matrícula recibe picos de solicitudes que compiten por los hi
 | Conexiones de PostgreSQL | `max_connections = 100` (97 utilizables) | rechazo al agotarse |
 | Fila de la asignatura | 1 por asignatura | el `UPDATE` de cupos serializa matrículas de la misma asignatura |
 
-**Límite físico duro (C6).** réplicas × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 97. La malla de la sección 5 solo contiene configuraciones que lo cumplen.
+**Límite físico duro (C6).** réplicas × (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) ≤ 97. La malla de la sección 5 solo incluye configuraciones que lo cumplen.
 
 **Comportamiento de agentes (C7).** El cliente abandona cada intento tras T = 10 s, reintenta hasta k = 3 veces con pausa exponencial de media 5 s y, agotados los reintentos, el estudiante abandona.
 
@@ -41,24 +41,24 @@ Una plataforma de matrícula recibe picos de solicitudes que compiten por los hi
 
 | Observación / Error en Entrega 1 | Corrección Implementada en la Entrega Final | Archivo / Línea en el Repositorio |
 | :--- | :--- | :--- |
-| El repositorio no tenía simulación SimPy funcional: el modelo anterior tenía una sola cola, λ = 1 req/s fija y servicio de 0.30 s inventado, sin relación con la telemetría. | Modelo de tres etapas (hilos, CPU, pool) con tiempos remuestreados de la telemetría real, llegadas no homogéneas por perfiles, timeouts, reintentos y abandono. | `simulacion/modelo.py`, `simulacion/config.py` |
-| La telemetría solo guardaba duración total; no se podía separar espera de servicio. | Se registran `pre_ms` (hasta obtener conexión) y `hold_ms` (conexión retenida) con eventos del pool, y un hilo aparte escribe el CSV. | `api/telemetria.py`, `datos/telemetry_log.csv` |
+| No había simulación SimPy funcional: una sola cola, λ = 1 req/s fija y servicio de 0.30 s inventado, sin relación con la telemetría. | Modelo de tres etapas (hilos, CPU, pool) con tiempos remuestreados de la telemetría real, llegadas por perfiles, timeouts, reintentos y abandono. | `simulacion/modelo.py`, `simulacion/config.py` |
+| La telemetría solo guardaba la duración total; no separaba espera de servicio. | Se registran `pre_ms` (hasta obtener conexión) y `hold_ms` (conexión retenida) con eventos del pool; un hilo aparte escribe el CSV. | `api/telemetria.py`, `datos/telemetry_log.csv` |
 | Parámetros del código y del documento no coincidían (`max_connections` 20 vs 100, pool 5 vs 10, timeout 30 s vs 10 s). | Se alinearon: pool 10, overflow 0, timeout 10 s, `max_connections = 100`. | `docker-compose.yml`, `api/database.py` |
-| Tablas 6 y 8 de la Entrega 1 daban perfiles de llegada distintos (40 % en el primer minuto frente a 70 % en 10 min). | Se simulan ambos perfiles (`pico60` y `tabla8`); el pico de λ = 32 req/s de la tabla 6 es el escenario base. | `simulacion/modelo.py` (`tiempos_llegada`) |
-| Tiempos de servicio de la Entrega 1 (0.15 s y 0.40 s) eran supuestos; la API real responde en milisegundos. | Se simulan dos mundos: «E1» (supuestos) y «medido» (telemetría). Se reportan ambos. | `simulacion/main.py` |
-| La Ley de Little no estaba verificada. | Se verifica L = λW dentro de cada réplica y en el M/M/10 estacionario (sección 4). | `analisis/contrast_analysis.py` |
-| Cifras codificadas a mano en los scripts de análisis (por ejemplo 0.748). | Todo se calcula desde `simulacion/resultados/*.csv`. | `analisis/` |
-| Faltaban N ≥ 30 réplicas e IC95 %. | 30 réplicas, semillas 42..71, IC95 % con t de Student. | `simulacion/config.py` |
+| Las tablas 6 y 8 de la Entrega 1 daban perfiles de llegada distintos (40 % en el primer minuto frente a 70 % en 10 min). | Se simulan ambos perfiles (`pico60` y `tabla8`); el pico de λ = 32 req/s de la tabla 6 es el escenario base. | `simulacion/modelo.py` (`tiempos_llegada`) |
+| Los tiempos de servicio de la Entrega 1 (0.15 s y 0.40 s) eran supuestos; la API real responde en milisegundos. | Se simulan dos mundos, «E1» (supuestos) y «medido» (telemetría), y se reportan ambos. | `simulacion/main.py` |
+| La Ley de Little no estaba verificada. | Se verifica L = λW en cada réplica y en el M/M/10 estacionario (sección 4). | `analisis/contrast_analysis.py` |
+| Cifras escritas a mano en los scripts de análisis (por ejemplo 0.748). | Todo se calcula desde `simulacion/resultados/*.csv`. | `analisis/` |
+| Faltaban N ≥ 30 réplicas e IC 95 %. | 30 réplicas, semillas 42..71, IC 95 % con t de Student. | `simulacion/config.py` |
 
 ## 3. Arquitectura del Prototipo, Telemetría y Parámetros Calibrados
 
 ### 3.1 Resumen de Telemetría del Sistema Real Contenerizado
 
-La arquitectura se despliega con `docker compose up --build -d`: Streamlit (:8501) → FastAPI (:8000) → PostgreSQL 16 (:5432). El middleware `medir_tiempo` y los eventos `checkout`/`checkin` del pool de SQLAlchemy escriben una fila por petición en `datos/telemetry_log.csv`, con `duration_ms`, `pre_ms` y `hold_ms`. Un hilo independiente hace la escritura para no sumar latencia a la petición.
+Se despliega con `docker compose up --build -d`: Streamlit (:8501) → FastAPI (:8000) → PostgreSQL 16 (:5432). El middleware `medir_tiempo` y los eventos `checkout`/`checkin` del pool de SQLAlchemy escriben una fila por petición en `datos/telemetry_log.csv`, con `duration_ms`, `pre_ms` y `hold_ms`; un hilo independiente hace la escritura para no sumar latencia.
 
-Para calibrar se ejecutaron 3000 consultas y 3000 matrículas en serie (concurrencia 1, sin congestión) con `datos/generar_carga.py calibrar`. Además se midió el tiempo de CPU del proceso con `datos/medir_cpu.py`: 2.40 ms por consulta y 3.93 ms por matrícula. Para validar se aplicaron cargas de llegadas Poisson de 100 a 350 req/s (8 corridas, `datos/real/`).
+Para calibrar se ejecutaron 3000 consultas y 3000 matrículas en serie (concurrencia 1, sin congestión) con `datos/generar_carga.py calibrar`. Se midió además el tiempo de CPU del proceso (`datos/medir_cpu.py`): 2.40 ms por consulta y 3.93 ms por matrícula. Para validar se aplicaron llegadas Poisson de 100 a 350 req/s (8 corridas, `datos/real/`).
 
-Limitaciones: la medición se hizo con la API y PostgreSQL en una misma máquina compartida con el generador de carga, la duración medida no incluye la latencia de red y el generador de carga (Python) no logra ofrecer 300 o más req/s completos.
+Limitaciones: la API, PostgreSQL y el generador de carga compartieron la misma máquina; la duración medida no incluye la latencia de red; y el generador (Python) no logra ofrecer 300 req/s o más completos.
 
 ### 3.2 Parámetros y Distribuciones de Entrada del Modelo SimPy
 
@@ -75,16 +75,16 @@ Limitaciones: la medición se hizo con la API y PostgreSQL en una misma máquina
 | Timeout de espera por conexión | Pool | 10 s | s | `api/database.py` |
 | Tiempos de servicio «E1» | Pool | Exponencial, media 0.15 s (consulta), 0.40 s (matrícula) | s | Entrega 1 (supuesto) |
 
-**Validación contra el sistema real.** κ se ajustó con las cinco corridas de hasta 200 req/s. Con κ = 1.3 el simulador reproduce la latencia media real con diferencias entre −3 % y +4 % en cuatro de las cinco corridas, y −18 % en la de pool 2 a 200 req/s (16.4 ms frente a 20.0 ms). El p95 simulado queda 7–31 % por debajo del real. Fuera de muestra (250 a 350 req/s) el modelo ubica bien la rodilla de saturación (capacidad simulada de unos 259 req/s por réplica), pero es optimista pasado ese punto: a 300 req/s la API real colapsó (17 % de respuestas correctas) y el simulador solo se degrada. Parte de esa diferencia es del generador de carga, que no logra ofrecer la tasa nominal. La figura 1 muestra la comparación. Por eso las conclusiones en saturación profunda son cualitativas.
+**Validación contra el sistema real.** κ se ajustó con las cinco corridas de hasta 200 req/s. Con κ = 1.3 el simulador reproduce la latencia media real con diferencias entre −3 % y +3 % en cuatro de las cinco corridas, y −18 % en la de pool 2 a 200 req/s (16.4 ms frente a 20.0 ms); el p95 simulado queda 7–31 % por debajo del real. Fuera de muestra (250 a 350 req/s) el modelo ubica la rodilla de saturación (unos 259 req/s por réplica), pero sobrestima la latencia media (82 ms frente a 23.5 ms reales a 250 req/s) y subestima el colapso: a 300 req/s la API real respondió bien solo el 17 % de las peticiones (4 % a 350 req/s), mientras el simulador las atiende todas con latencia creciente. Parte de la diferencia se debe al generador de carga, que no logra ofrecer la tasa nominal. Por eso las conclusiones en saturación profunda son cualitativas (figura 1).
 
 ![Validación](figuras/fig1_validacion.png)
 
 ## 4. Diseño Experimental y Contraste Analítico (M/M/c vs. SimPy)
 
 - **Horizonte simulado:** 2 h (7200 s). Las llegadas se limitan a ese horizonte y el sistema se simula hasta vaciarse.
-- **Calentamiento:** 300 s en el contraste estacionario M/M/10. Las corridas por estudiantes parten de un sistema vacío porque el pico inicial es parte del fenómeno.
+- **Calentamiento:** 300 s en el contraste M/M/10. Las corridas por estudiantes parten de un sistema vacío porque el pico inicial es parte del fenómeno.
 - **Réplicas independientes:** 30, semillas `42..71`.
-- **Métricas:** p95 y p99 del tiempo de respuesta por intento exitoso, abandono por estudiante, utilización del recurso en el minuto más cargado, error de Little.
+- **Métricas:** p95 y p99 del tiempo de respuesta por intento exitoso, abandono por estudiante, utilización del recurso en el minuto más cargado y error de Little.
 
 ### 4.1 Tabla de Validación Analítica (Régimen Estacionario Exponencial)
 
@@ -99,26 +99,26 @@ M/M/10 con λ = 32 req/s, μ = 4 req/s (ρ = 0.80), servicio exponencial, sin ab
 | Tiempo medio en el sistema (W) | 0.3011 s | 0.3012 ± 0.0014 s | 0.02 |
 | Solicitudes en el sistema (L) | 9.637 | 9.651 ± 0.051 | 0.14 |
 
-El valor teórico cae dentro del IC95 % en todas las métricas. La figura 2 lo resume.
+El valor teórico cae dentro del IC 95 % en todas las métricas (figura 2).
 
-**Ley de Little.** En el M/M/10 estacionario, L simulado = 9.651 y λ·W = 9.649; el error relativo máximo entre las 30 réplicas es 0.03 %. En los escenarios con estudiantes, L y λ·W coinciden al 0.000 % porque se mide sobre toda la corrida hasta vaciar el sistema (`analisis/contrast_analysis.py`).
+**Ley de Little.** En el M/M/10 estacionario, L simulado = 9.651 y λ·W = 9.649; el error relativo máximo entre las 30 réplicas es 0.03 %. En los escenarios con estudiantes, L y λ·W coinciden al 0.000 %, porque se mide sobre toda la corrida hasta vaciar el sistema (`analisis/contrast_analysis.py`).
 
 ![M/M/c](figuras/fig2_mmc.png)
 
-**Análisis de divergencia al activar la dinámica real.** Con el perfil real el modelo deja de parecerse al M/M/10. La llegada es una ráfaga transitoria (el 40 % en el primer minuto) y no un flujo constante, por lo que el pool pasa de estar casi vacío a saturarse y vuelve a vaciarse. Con N = 3000 el p95 por intento es 0.84 s, casi tres veces el W teórico de 0.30 s, porque la cola se forma durante la ráfaga. La utilización del minuto pico es 63.6 %, por debajo del 80 % estacionario. Con N = 6000 el servicio supera la capacidad (λ pico ≈ 64 req/s frente a 40 req/s), los intentos que superan 10 s se pierden, los estudiantes reintentan y se generan 13 538 intentos contra los 9 600 que habría sin reintentos (+41 %): la carga ofrecida crece justo cuando el sistema está saturado. Los tiempos no exponenciales y el trabajo huérfano (el servidor sigue procesando peticiones que el cliente ya abandonó) también agravan la saturación: si el servidor descarta ese trabajo, el abandono baja de 23.9 % a 18.9 % y el p95 sube a 7.96 s (la figura 7 compara ambos casos).
+**Análisis de divergencia al activar la dinámica real.** Con el perfil real el modelo deja de parecerse al M/M/10. La llegada es una ráfaga transitoria (40 % en el primer minuto), no un flujo constante: el pool pasa de estar casi vacío a saturarse y vuelve a vaciarse. Con N = 3000 el p95 por intento es 0.84 s, casi tres veces el W teórico de 0.30 s, porque la cola se forma durante la ráfaga; la utilización del minuto pico es 63.6 %, menor que el 80 % estacionario. Con N = 6000 la demanda supera la capacidad (λ pico ≈ 64 req/s frente a 40 req/s): los intentos que pasan de 10 s se pierden, los estudiantes reintentan y se generan 13 538 intentos en vez de los 9 600 que habría sin reintentos (+41 %), es decir, la carga crece justo cuando el sistema está saturado. El trabajo huérfano (el servidor sigue procesando peticiones que el cliente ya abandonó) agrava la saturación: si el servidor lo descarta, el abandono baja de 23.9 % a 18.9 % y el p95 sube a 7.96 s (figura 7).
 
 ## 5. Resultados de la Simulación y Evaluación de Políticas de Decisión
 
 ### 5.1 Comparación Cuantitativa de Escenarios
 
-Escenario de estrés: N = 6000 estudiantes (el doble de la Entrega 1), perfil `pico60`, supuestos de servicio «E1», 30 réplicas. Entre paréntesis, el p95 por intento y el p99.
+Escenario de estrés: N = 6000 estudiantes (el doble de la Entrega 1), perfil `pico60`, supuestos «E1», 30 réplicas. Los p95 y p99 son por intento.
 
 | KPI (con unidad) | Umbral SLA | Política Actual: 1 réplica, pool 10 (Media ± IC 95 %) | Alternativa 1: 1 réplica, pool 15 | Alternativa 2: 2 réplicas, pool 10 |
 | :--- | :---: | :---: | :---: | :---: |
 | Tiempo de respuesta p95 (s) | < 2.0 | 7.31 ± 0.23 | 1.72 ± 0.24 | 0.83 ± 0.01 |
 | Tiempo de respuesta p99 (s) | — | 9.43 ± 0.07 | 2.30 ± 0.26 | 1.43 ± 0.01 |
 | Tasa de abandono (%) | < 3.0 | 23.90 ± 0.67 | 0.00 ± 0.00 | 0.00 ± 0.00 |
-| Utilización del pool, minuto pico (%) | 70–85 | 100.1 ± 0.1 | 81.5 ± 0.6 | 64.8 ± 0.7 |
+| Utilización del pool, minuto pico (%) | 70–85 | ≈ 100 (saturado) | 81.5 ± 0.6 | 64.8 ± 0.7 |
 | Conexiones a PostgreSQL (límite 97) | ≤ 97 | 10 | 15 | 20 |
 | ¿Cumple SLA? | | No | Sí (p95 con poco margen) | Sí (utilización bajo la banda) |
 
@@ -128,13 +128,13 @@ Con N = 3000 (Entrega 1) la política actual cumple: p95 = 0.84 ± 0.01 s, p99 =
 
 ![Malla](figuras/fig4_malla_e1.png)
 
-La malla completa (figura 4 y `simulacion/resultados/tablas.md`) muestra que, bajo los supuestos de la Entrega 1, lo que importa es el total de conexiones (réplicas × pool): con 20 conexiones o más todas las combinaciones cumplen el SLA a N = 6000, con 10 conexiones se pierde 23–24 % de los estudiantes y con 5 por réplica y una sola réplica el abandono llega a 45 %.
+La malla completa (figura 4 y `simulacion/resultados/tablas.md`) muestra que, con los supuestos de la Entrega 1, lo que importa es el total de conexiones (réplicas × pool): con 20 o más todas las combinaciones cumplen el SLA a N = 6000; con 10 se pierde 23–24 % de los estudiantes; y con 5 conexiones (1 réplica, pool 5) el abandono llega a 45 %.
 
 ### 5.2 Análisis de las Preguntas de Decisión
 
-**Pregunta 1: ¿la política actual soporta el pico?** Soporta el pico de la Entrega 1 (N = 3000) pero con poco margen frente al crecimiento. Con N = 3750 el p95 es 1.19 s y la utilización 77.9 % (dentro de la banda), con N = 4500 el p95 ya es 4.33 s (incumple), y con N = 6000 el abandono supera 23 %. El p95 no sube de forma monótona para N ≥ 6000 porque solo se mide sobre los intentos que terminan: los demás son abandonos, y por eso el indicador que decide es el abandono (figura 3). El desacuerdo entre las tablas 6 y 8 de la Entrega 1 tiene un efecto grande: con el perfil de la tabla 8 el pico sería de unos 5.6 req/s y no de 32 req/s.
+**Pregunta 1: ¿la política actual soporta el pico?** Soporta el pico de la Entrega 1 (N = 3000), pero con poco margen frente al crecimiento. Con N = 3750 el p95 es 1.19 s y la utilización 77.9 % (dentro de la banda); con N = 4500 el p95 ya es 4.33 s (incumple); y con N = 6000 el abandono supera 23 %. El p95 no sube de forma monótona para N ≥ 6000 porque solo se mide sobre los intentos que terminan (los demás son abandonos), por eso el indicador que decide es el abandono (figura 3). El desacuerdo entre las tablas 6 y 8 de la Entrega 1 pesa mucho: con el perfil de la tabla 8 el pico sería de unos 5.6 req/s y no de 32 req/s.
 
-**Pregunta 2: ¿cuál es el cuello de botella y qué palanca conviene?** Depende de qué tiempos de servicio sean ciertos. Con los supuestos de la Entrega 1 (0.15–0.40 s en la base de datos), el cuello es el pool y la palanca es el total de conexiones. Con los tiempos realmente medidos (unos 3 a 5 ms por petición) la base de datos casi no trabaja: con N = 100 000 el pool está al 22.8 ± 0.3 % de utilización pico, mientras que la CPU de la réplica alcanza 82.8 ± 0.2 %, y con 150 000 estudiantes la réplica se satura (abandono 78 %). El pool apenas cambia el resultado (figura 6): a 250 req/s sostenidos el p95 con una réplica es 213–236 ms según el pool, pero con dos réplicas es 11.7 ms sin importar el pool. La palanca es agregar réplicas, no agrandar el pool (que además consume el límite C6). Esto concuerda con la Ley de Little: con servicio de 4–5 ms y 250 req/s, el pool retiene en promedio ≈1 conexión.
+**Pregunta 2: ¿cuál es el cuello de botella y qué palanca conviene?** Depende de qué tiempos de servicio sean ciertos. Con los supuestos de la Entrega 1 (0.15–0.40 s en la base de datos) el cuello es el pool y la palanca es el total de conexiones. Con los tiempos medidos (3 a 5 ms por petición) la base de datos casi no trabaja: con N = 100 000 el pool está al 22.8 ± 0.3 % de utilización pico mientras la CPU de la réplica llega a 82.8 ± 0.2 %, y con 150 000 estudiantes la réplica se satura (abandono 78 %). El pool apenas cambia el resultado (figura 6): a 250 req/s sostenidos el p95 con una réplica es 213–236 ms según el pool, pero con dos réplicas es 11.7 ms sin importar el pool. La palanca es agregar réplicas, no agrandar el pool (que además consume el límite C6). Concuerda con la Ley de Little: con servicio de 4–5 ms y 250 req/s, el pool retiene en promedio ≈ 1 conexión.
 
 ![Sistema medido](figuras/fig5_sistema_medido.png)
 
@@ -146,11 +146,11 @@ La malla completa (figura 4 y `simulacion/resultados/tablas.md`) muestra que, ba
 
 ### 6.1 Recomendación Técnica Final
 
-Desplegar **2 réplicas de la API con `DB_POOL_SIZE = 10` y `DB_MAX_OVERFLOW = 0`** (20 conexiones, muy por debajo de las 97 permitidas), con un balanceador que reparta entre réplicas. Es la única configuración evaluada que cumple a la vez el p95 (0.83 s), el abandono (0 %) y la restricción C6, y es la que resiste en ambos mundos: duplica los recursos que limitan según los supuestos de la Entrega 1 (conexiones) y según la medición (CPU de Python). Con el sistema medido sostiene 500 req/s con p95 de unos 140 ms, mientras que una sola réplica deja de responder. Su utilización de pico (64.8 %) queda algo por debajo de la banda de 70–85 %: es capacidad de reserva, no un incumplimiento. La alternativa de una réplica con pool 15 sí está en la banda (81.5 %), pero su p95 (1.72 ± 0.24 s) queda a poca distancia del umbral.
+Desplegar **2 réplicas de la API con `DB_POOL_SIZE = 10` y `DB_MAX_OVERFLOW = 0`** (20 conexiones, muy por debajo de las 97 permitidas), con un balanceador que reparta entre réplicas. Es la única configuración evaluada que cumple a la vez el p95 (0.83 s), el abandono (0 %) y la restricción C6, y resiste en ambos mundos: duplica el recurso que limita según los supuestos de la Entrega 1 (conexiones) y según la medición (CPU de Python). Con el sistema medido sostiene 500 req/s con p95 de unos 145 ms, mientras que una sola réplica deja de responder. Su utilización pico (64.8 %) queda algo bajo la banda de 70–85 %: es capacidad de reserva, no un incumplimiento. La alternativa de una réplica con pool 15 sí está en la banda (81.5 %), pero su p95 (1.72 ± 0.24 s) queda cerca del umbral.
 
-Antes de producción conviene: (1) repetir `calibrar` con la API detrás del balanceador y con latencia de red real; (2) medir tiempos de matrícula con contención de cupos en pocas asignaturas, que aquí se evitó con cupos casi ilimitados (supuesto S3); (3) decidir si el servidor debe cancelar el trabajo cuando el cliente abandona (en N = 6000 baja el abandono de 23.9 % a 18.9 %, pero no elimina la saturación).
+Antes de producción conviene: (1) repetir la calibración con la API detrás del balanceador y con latencia de red real; (2) medir tiempos de matrícula con contención de cupos en pocas asignaturas, que aquí se evitó con cupos casi ilimitados (supuesto S3); (3) decidir si el servidor debe cancelar el trabajo cuando el cliente abandona (con N = 6000 baja el abandono de 23.9 % a 18.9 %, pero no elimina la saturación).
 
-**Limitaciones.** La validación fuera de muestra es solo cualitativa; el generador de carga se satura antes que la API; el modelo no incluye contención por bloqueo de filas ni la red; el perfil de llegadas de la Entrega 1 es ambiguo y el resultado cuantitativo depende de él.
+**Limitaciones.** La validación fuera de muestra es solo cualitativa; el generador de carga se satura antes que la API; el modelo no incluye contención por bloqueo de filas ni la red; y el perfil de llegadas de la Entrega 1 es ambiguo, por lo que el resultado cuantitativo depende de él.
 
 ### 6.2 Declaración de Uso de Inteligencia Artificial
 
