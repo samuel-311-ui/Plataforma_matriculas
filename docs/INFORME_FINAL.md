@@ -154,6 +154,9 @@ Antes de producción conviene: (1) repetir la calibración con la API detrás de
 
 ### 6.2 Declaración de Uso de Inteligencia Artificial
 
-| Herramienta de IA | Secciones / Módulos donde se utilizó | Qué verificó, corrigió y validó el equipo |
+| Herramienta de IA | Módulos donde se utilizó | instrucción/prompt dado |
 | :--- | :--- | :--- |
-| Claude (Anthropic) | `api/telemetria.py`, `datos/generar_carga.py`, `simulacion/` (modelo, calibración, experimentos), `analisis/`, redacción de este informe | *(Pendiente: completa el equipo antes de entregar: ecuaciones de Erlang C, parámetros frente a la Entrega 1, cifras del informe frente a `simulacion/resultados/*.csv`, ejecución de los comandos del README.)* |
+| Claude | api/telemetria.py, datos/generar_carga.p, simulacion/, redacción del formato md | Ayúdame diciendo paso a paso la estructura de las carpetas para generar la simulación y que datos e información debo ingresar para que esta se pueda llevar a cabo |
+| Chatgpt | simulacion/, analisis/, fórmulas de earlang, ley de little | Según las formulas de la teoría de colas, la ley de little y earlang, me puedes decir si la simulación en nuestra api si las lleva a cabo, o que podemos mejorar para que se cumpla |
+| Claude | api/telemetria.py, datos/generar_carga.py, analisis/, redacción de este informe | Ayudame diciendome que comandos debo ejecutar en la terminal para poder llevar a cabo esta simulación. Dime como puedo pasar el INFORME_FINAL a formato md, sin dañar la visualización del texto y que nada quede sin poder verse bien |
+| Gemini | figuras/ | Me puedes ayudar con un paso a paso, de como con la libreria de python podemos mostrar en la carpeta figuras los resultados de la simulación y con que comandos se puede llevar a cabo|
