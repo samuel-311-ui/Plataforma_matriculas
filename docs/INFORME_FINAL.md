@@ -8,9 +8,9 @@
 
 | Integrante | Correo Institucional | Rol Ejecutado | Commits Principales (Módulos) |
 | :--- | :--- | :--- | :--- |
-| Samuel Zapata | samuel.zapata599@pascualbravo.edu.co | Modelado DES / SimPy | `simulacion/` |
-| Simón Restrepo | simon.restrepo405@pascualbravo.edu.co | Infraestructura / API / Telemetría | `api/`, `docker-compose.yml`, `datos/` |
-| Felipe Hurtado | felipe.hurtado796@pascualbravo.edu.co | Análisis Estadístico / Contraste M/M/c | `analisis/`, `docs/` |
+| Samuel Zapata | samuel.zapata599@pascualbravo.edu.co | Modelado DES / SimPy | `api/`, `docker-compose.yml` |
+| Simón Restrepo | simon.restrepo405@pascualbravo.edu.co | Infraestructura / API / Telemetría |  `docs/` |
+| Felipe Hurtado | felipe.hurtado796@pascualbravo.edu.co | Análisis Estadístico / Contraste M/M/c | `analisis/`, `datos/`, `simulacion/` |
 
 ## 1. Resumen Ejecutivo
 
