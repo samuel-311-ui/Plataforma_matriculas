@@ -111,7 +111,7 @@ El valor teórico cae dentro del IC 95 % en todas las métricas (figura 2).
 
 ### 5.1 Comparación Cuantitativa de Escenarios
 
-Escenario de estrés: N = 6000 estudiantes (el doble de la Entrega 1), perfil `pico60`, supuestos «E1», 30 réplicas. Los p95 y p99 son por intento.
+Escenario de estrés: N = 6000 estudiantes, perfil `pico60`, supuestos «E1», 30 réplicas. Los p95 y p99 son por intento.
 
 | KPI (con unidad) | Umbral SLA | Política Actual: 1 réplica, pool 10 (Media ± IC 95 %) | Alternativa 1: 1 réplica, pool 15 | Alternativa 2: 2 réplicas, pool 10 |
 | :--- | :---: | :---: | :---: | :---: |
@@ -128,7 +128,7 @@ Con N = 3000 (Entrega 1) la política actual cumple: p95 = 0.84 ± 0.01 s, p99 =
 
 ![Malla](figuras/fig4_malla_e1.png)
 
-La malla completa (figura 4 y `simulacion/resultados/tablas.md`) muestra que, con los supuestos de la Entrega 1, lo que importa es el total de conexiones (réplicas × pool): con 20 o más todas las combinaciones cumplen el SLA a N = 6000; con 10 se pierde 23–24 % de los estudiantes; y con 5 conexiones (1 réplica, pool 5) el abandono llega a 45 %.
+La malla completa (figura 4 y `simulacion/resultados/tablas.md`) muestra que, lo que importa es el total de conexiones (réplicas × pool): con 20 o más todas las combinaciones cumplen el SLA a N = 6000; con 10 se pierde 23–24 % de los estudiantes; y con 5 conexiones (1 réplica, pool 5) el abandono llega a 45 %.
 
 ### 5.2 Análisis de las Preguntas de Decisión
 
